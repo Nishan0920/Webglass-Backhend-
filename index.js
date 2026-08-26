@@ -2,9 +2,8 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-import dotenv from "dotenv";
-
 import MongoDB from "./db.js";
+
 import entry from "./Routes/Entry.js";
 import customerData from "./Routes/Customers.js";
 import inventoryData from "./Routes/Inventory.js";
@@ -14,8 +13,6 @@ import salary from "./Routes/Salary.js";
 import RentAndLease from "./Routes/RentAndLease.js";
 import expenses from "./Routes/Expenses.js";
 import sales from "./Routes/Sales.js";
-
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +28,17 @@ app.use(
 
 app.use(express.json());
 
-MongoDB();
+app.use(async (req, res, next) => {
+  try {
+    await MongoDB();
+    next();
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    res.status(500).json({
+      message: "Database connection failed",
+    });
+  }
+});
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
