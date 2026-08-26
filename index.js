@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import cors from "cors";
 import MongoDB from "./db.js";
 
+
 import entry from "./Routes/Entry.js";
 import customerData from "./Routes/Customers.js";
 import inventoryData from "./Routes/Inventory.js";

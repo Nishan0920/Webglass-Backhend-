@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+
 import Items from "../Models/InventoryModal.js";
 
 const router = express.Router();
@@ -10,7 +11,8 @@ const router = express.Router();
 // MULTER IMAGE UPLOAD SETUP
 // ==========================================
 
-const uploadDir = "uploads";
+// Vercel allows temporary files inside /tmp
+const uploadDir = "/tmp/uploads";
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -104,8 +106,6 @@ router.post(
         });
       }
 
-      // Stock defaults to 0 if the field wasn't sent, so older
-      // clients that don't know about Stock yet don't break.
       const stockValue = Number(Stock);
 
       const product = await Items.create({
@@ -114,7 +114,12 @@ router.post(
         Brand,
         CostPrice,
         SellingPrice,
-        Stock: Number.isFinite(stockValue) && stockValue >= 0 ? stockValue : 0,
+        Stock:
+          Number.isFinite(stockValue) && stockValue >= 0
+            ? stockValue
+            : 0,
+
+        // Save filename for now
         Image: req.file ? req.file.filename : "",
       });
 
@@ -191,7 +196,6 @@ router.get("/inventory/:id", async (req, res) => {
 
 // ==========================================
 // UPDATE PRODUCT
-// (also used by SalesPOS to decrement Stock after a sale)
 // ==========================================
 
 router.put(
@@ -227,27 +231,39 @@ router.put(
         SellingPrice,
       };
 
-      // Only touch Stock if the caller actually sent it (SalesPOS always
-      // sends it; the Inventory edit form always sends it too). This keeps
-      // partial updates from accidentally zeroing stock out.
-      if (Stock !== undefined && Stock !== null && Stock !== "") {
+      // ==========================================
+      // UPDATE STOCK
+      // ==========================================
+
+      if (
+        Stock !== undefined &&
+        Stock !== null &&
+        Stock !== ""
+      ) {
         const stockValue = Number(Stock);
 
-        if (!Number.isFinite(stockValue) || stockValue < 0) {
+        if (
+          !Number.isFinite(stockValue) ||
+          stockValue < 0
+        ) {
           return res.status(400).json({
             success: false,
-            message: "Stock must be a valid number of 0 or more",
+            message:
+              "Stock must be a valid number of 0 or more",
           });
         }
 
         updateData.Stock = stockValue;
       }
 
-      // Only update image if a new image was uploaded
+      // ==========================================
+      // UPDATE IMAGE
+      // ==========================================
+
       if (req.file) {
         updateData.Image = req.file.filename;
 
-        // Delete old image
+        // Delete old temporary image
         if (existingProduct.Image) {
           const oldImagePath = path.join(
             uploadDir,
@@ -287,106 +303,134 @@ router.put(
 );
 
 // ==========================================
-// ADJUST STOCK (atomic decrement/increment)
+// ADJUST STOCK
 // ==========================================
-// SalesPOS can call this instead of the general PUT above — it's atomic
-// (uses $inc, not a read-then-write), so two sales completing at the same
-// moment can't both read the same stock number and overwrite each other.
-// Send a negative "amount" to decrement on a sale, positive to restock.
 
-router.patch("/inventory/:id/adjust-stock", async (req, res) => {
-  try {
-    const { amount } = req.body;
+router.patch(
+  "/inventory/:id/adjust-stock",
+  async (req, res) => {
+    try {
+      const { amount } = req.body;
 
-    const change = Number(amount);
+      const change = Number(amount);
 
-    if (!Number.isFinite(change) || change === 0) {
-      return res.status(400).json({
+      if (
+        !Number.isFinite(change) ||
+        change === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "A non-zero numeric amount is required",
+        });
+      }
+
+      const existingProduct = await Items.findById(
+        req.params.id
+      );
+
+      if (!existingProduct) {
+        return res.status(404).json({
+          success: false,
+          message: "Product not found",
+        });
+      }
+
+      const currentStock = Number(
+        existingProduct.Stock || 0
+      );
+
+      const resultingStock = currentStock + change;
+
+      if (resultingStock < 0) {
+        return res.status(409).json({
+          success: false,
+          message:
+            `Not enough stock. Available: ${currentStock}, requested change: ${change}`,
+        });
+      }
+
+      const updatedProduct =
+        await Items.findByIdAndUpdate(
+          req.params.id,
+          {
+            $inc: {
+              Stock: change,
+            },
+          },
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+
+      res.status(200).json({
+        success: true,
+        message: "Stock updated successfully",
+        data: updatedProduct,
+      });
+    } catch (error) {
+      console.error("Adjust stock error:", error);
+
+      res.status(500).json({
         success: false,
-        message: "A non-zero numeric amount is required",
+        message: error.message,
       });
     }
-
-    const existingProduct = await Items.findById(req.params.id);
-
-    if (!existingProduct) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
-    }
-
-    const resultingStock = existingProduct.Stock + change;
-
-    if (resultingStock < 0) {
-      return res.status(409).json({
-        success: false,
-        message: `Not enough stock. Available: ${existingProduct.Stock}, requested change: ${change}`,
-      });
-    }
-
-    const updatedProduct = await Items.findByIdAndUpdate(
-      req.params.id,
-      { $inc: { Stock: change } },
-      { new: true, runValidators: true }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "Stock updated successfully",
-      data: updatedProduct,
-    });
-  } catch (error) {
-    console.error("Adjust stock error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
   }
-});
+);
 
 // ==========================================
 // DELETE PRODUCT
 // ==========================================
 
-router.delete("/inventory/:id", async (req, res) => {
-  try {
-    const item = await Items.findById(req.params.id);
-
-    if (!item) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
-    }
-
-    // Delete image from uploads folder
-    if (item.Image) {
-      const imagePath = path.join(
-        uploadDir,
-        item.Image
+router.delete(
+  "/inventory/:id",
+  async (req, res) => {
+    try {
+      const item = await Items.findById(
+        req.params.id
       );
 
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+      if (!item) {
+        return res.status(404).json({
+          success: false,
+          message: "Product not found",
+        });
       }
+
+      // Delete image from temporary uploads
+      if (item.Image) {
+        const imagePath = path.join(
+          uploadDir,
+          item.Image
+        );
+
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
+      }
+
+      await Items.findByIdAndDelete(
+        req.params.id
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Product deleted successfully",
+      });
+    } catch (error) {
+      console.error(
+        "Delete inventory error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
     }
-
-    await Items.findByIdAndDelete(req.params.id);
-
-    res.status(200).json({
-      success: true,
-      message: "Product deleted successfully",
-    });
-  } catch (error) {
-    console.error("Delete inventory error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
   }
-});
+);
 
 export default router;
