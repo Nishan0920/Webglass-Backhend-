@@ -1,17 +1,15 @@
 import express from "express";
 import multer from "multer";
+import mongoose from "mongoose";
 import Inventory from "../Models/InventoryModal.js";
 
 const router = express.Router();
 
-// Store the uploaded file in memory (not on disk) — Vercel's filesystem
-// is ephemeral, so anything written to disk disappears between requests.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB, matches frontend check
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// GET all inventory items
 router.get("/inventoryalldata", async (req, res) => {
   try {
     const items = await Inventory.find().sort({ createdAt: -1 });
@@ -30,7 +28,6 @@ router.get("/inventoryalldata", async (req, res) => {
   }
 });
 
-// GET a single product's image, served directly as binary
 router.get("/inventory/image/:id", async (req, res) => {
   try {
     const item = await Inventory.findById(req.params.id);
@@ -47,7 +44,6 @@ router.get("/inventory/image/:id", async (req, res) => {
   }
 });
 
-// CREATE a new product
 router.post("/inventory", upload.single("image"), async (req, res) => {
   try {
     const { ProductName, Category, Brand, CostPrice, SellingPrice, Stock } =
@@ -84,7 +80,64 @@ router.post("/inventory", upload.single("image"), async (req, res) => {
   }
 });
 
-// UPDATE an existing product
+router.patch("/inventory/:id/adjust-stock", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid inventory ID",
+      });
+    }
+
+    const adjustBy = Number(amount);
+
+    if (!Number.isFinite(adjustBy)) {
+      return res.status(400).json({
+        success: false,
+        message: "amount must be a valid number",
+      });
+    }
+
+    const item = await Inventory.findById(id);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    const currentStock = Number(item.Stock || 0);
+    const newStock = currentStock + adjustBy;
+
+    if (newStock < 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot adjust stock below 0. Current stock: ${currentStock}`,
+      });
+    }
+
+    item.Stock = newStock;
+    await item.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Stock adjusted successfully",
+      data: item,
+    });
+  } catch (error) {
+    console.error("Error adjusting stock:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to adjust stock",
+    });
+  }
+});
+
 router.put("/inventory/:id", upload.single("image"), async (req, res) => {
   try {
     const { ProductName, Category, Brand, CostPrice, SellingPrice, Stock } =
@@ -132,7 +185,6 @@ router.put("/inventory/:id", upload.single("image"), async (req, res) => {
   }
 });
 
-// DELETE a product
 router.delete("/inventory/:id", async (req, res) => {
   try {
     const deletedItem = await Inventory.findByIdAndDelete(req.params.id);
