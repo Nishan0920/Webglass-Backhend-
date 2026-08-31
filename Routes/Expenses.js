@@ -36,7 +36,7 @@ router.get("/expenses", async (req, res) => {
     if (search.trim()) {
       const regex = new RegExp(search.trim(), "i");
 
-      query.$or = [{ name: regex }, { category: regex }, { vendor: regex }];
+      query.$or = [{ name: regex }, { vendor: regex }];
     }
 
     const pageNumber = Math.max(1, Number(page));
@@ -116,10 +116,6 @@ router.get("/expenses/stats", async (req, res) => {
       (expense) => expense.isBill === true,
     ).length;
 
-    const categorySet = new Set(
-      monthExpenses.map((expense) => expense.category).filter(Boolean),
-    );
-
     const daysElapsed = Math.max(1, now.getDate());
 
     const avgPerDay = totalExpenses / daysElapsed;
@@ -129,7 +125,6 @@ router.get("/expenses/stats", async (req, res) => {
       data: {
         totalExpenses,
         billsCount,
-        categoriesCount: categorySet.size,
         avgPerDay: Math.round(avgPerDay),
         month: startOfMonth.toISOString().slice(0, 7),
       },

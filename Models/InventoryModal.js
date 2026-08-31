@@ -44,14 +44,21 @@ const InventoryItems = new mongoose.Schema(
       min: 0,
     },
 
-    Image: {
+    // Image is stored directly in Mongo (Vercel's filesystem is ephemeral,
+    // so files saved to disk don't survive between requests).
+    ImageData: {
+      type: Buffer,
+      default: null,
+    },
+
+    ImageContentType: {
       type: String,
-      default: "",
+      default: null,
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const Items = mongoose.model("Inventory", InventoryItems);
