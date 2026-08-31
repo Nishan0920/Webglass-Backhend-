@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
+
 import MongoDB from "./db.js";
 
 import entry from "./Routes/Entry.js";
@@ -19,17 +20,15 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-
 const allowedOrigins = [
   "https://webglass-frontend.vercel.app",
-  
-].filter(Boolean);
+];
 
 app.use(
   cors({
     origin: allowedOrigins,
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.json());
@@ -40,13 +39,17 @@ app.use(async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Database connection failed:", error);
+
     res.status(500).json({
       message: "Database connection failed",
     });
   }
 });
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"))
+);
 
 app.use("/api", entry);
 app.use("/api", customerData);
@@ -62,11 +65,11 @@ app.get("/", (req, res) => {
   res.send("OptiFlow Backend is running");
 });
 
-
 if (!process.env.VERCEL) {
-  const PORT = process.env.PORT
+  const PORT = process.env.PORT || 5000;
+
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
