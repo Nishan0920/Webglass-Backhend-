@@ -20,15 +20,13 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-const allowedOrigins = [
-  "https://webglass-frontend.vercel.app",
-];
+const allowedOrigins = ["https://webglass-frontend.vercel.app"];
 
 app.use(
   cors({
     origin: allowedOrigins,
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json());
@@ -46,10 +44,7 @@ app.use(async (req, res, next) => {
   }
 });
 
-app.use(
-  "/uploads",
-  express.static(path.join(__dirname, "../uploads"))
-);
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.use("/api", entry);
 app.use("/api", customerData);
